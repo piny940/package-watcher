@@ -22,21 +22,15 @@ jobs:
       - name: Check format
         run: go fmt ./...
   go-test:
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: auth
-        ports:
-          - 5432:5432
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-server
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go mod download
       - run: go test ./...
   go-build-test:
     runs-on: ubuntu-latest
