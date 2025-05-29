@@ -9,6 +9,58 @@ import (
 
 var Logger *slog.Logger
 
+type Event struct {
+	*PushEvent
+	*PackageEvent
+}
+
+type PackageEvent struct {
+	Action  string  `json:"action"`
+	Package Package `json:"package"`
+}
+
+type Package struct {
+	CreatedAt      string         `json:"created_at"`
+	Description    string         `json:"description"`
+	Ecosystem      string         `json:"ecosystem"`
+	HtmlUrl        string         `json:"html_url"`
+	Id             int            `json:"id"`
+	Name           string         `json:"name"`
+	Namespace      string         `json:"namespace"`
+	PackageType    string         `json:"package_type"`
+	PackageVersion PackageVersion `json:"package_version"`
+}
+
+type PackageVersion struct {
+	Name              string            `json:"name"`
+	ContainerMetadata ContainerMetadata `json:"container_metadata"`
+}
+
+type ContainerMetadata struct {
+	Tag Tag `json:"tag"`
+}
+
+type Tag struct {
+	Name string `json:"name"`
+}
+
+type PushEvent struct {
+	After   string   `json:"after"`
+	Before  string   `json:"before"`
+	Commits []Commit `json:"commits"`
+}
+
+type Commit struct {
+	Id        int      `json:"id"`
+	Added     []string `json:"added"`
+	Modified  []string `json:"modified"`
+	Removed   []string `json:"removed"`
+	Message   string   `json:"message"`
+	Timestamp string   `json:"timestamp"`
+	TreeId    string   `json:"tree_id"`
+	Url       string   `json:"url"`
+}
+
 func main() {
 	Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	Logger.Info("Starting infrastructure service on port 8080")
@@ -42,7 +94,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	logger = logger.With("repo", repo)
 
-	var body map[string]interface{}
+	var body *Event
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&body); err != nil {
 		logger.Error("Failed to decode request body", "error", err)
@@ -55,8 +107,8 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h := &handler{Logger: logger}
-	if _, ok := body["package"]; ok {
-		h.handlePackage(w, body)
+	if body.PackageEvent != nil {
+		h.handlePackage(w, body.PackageEvent)
 		return
 	} else {
 		logger.Error("Unsupported event")
@@ -69,36 +121,27 @@ type handler struct {
 	Logger *slog.Logger
 }
 
-func (h *handler) handlePackage(w http.ResponseWriter, body map[string]interface{}) {
-	p, ok := body["package"].(map[string]interface{})
-	if !ok {
-		h.Logger.Error("Package field is missing or not an object")
-		http.Error(w, "Package field is missing or not an object", http.StatusBadRequest)
-		return
-	}
-	args := toArgs(p, "")
-	reg, ok := p["registry"].(map[string]interface{})
-	if !ok {
-		h.Logger.Error("Registry field is missing or not an object")
-		http.Error(w, "Registry field is missing or not an object", http.StatusBadRequest)
-		return
-	}
-	args = append(args, toArgs(reg, "registry.")...)
-	v, ok := p["package_version"].(map[string]interface{})
-	if !ok {
-		h.Logger.Error("Package version field is missing or not an object")
-		http.Error(w, "Package version field is missing or not an object", http.StatusBadRequest)
-		return
-	}
-	args = append(args, toArgs(v, "package_version.")...)
-	args = append(args, "tag", v["container_metadata"].(map[string]interface{})["tag"].(map[string]interface{})["name"].(string))
-
-	argsAny := make([]any, len(args))
-	for i, v := range args {
-		argsAny[i] = v
-	}
-	h.Logger.Info("package created", argsAny...)
+func (h *handler) handlePackage(w http.ResponseWriter, e *PackageEvent) {
+	h.Logger.Info("package created",
+		"action", e.Action,
+		"package_name", e.Package.Name,
+		"package_version", e.Package.PackageVersion.Name,
+		"package_id", e.Package.Id,
+		"package_created_at", e.Package.CreatedAt,
+		"package_description", e.Package.Description,
+		"package_ecosystem", e.Package.Ecosystem,
+		"package_html_url", e.Package.HtmlUrl,
+		"package_namespace", e.Package.Namespace,
+		"package_type", e.Package.PackageType,
+		"package_tag", e.Package.PackageVersion.ContainerMetadata.Tag.Name,
+	)
 	w.Write([]byte("Package created successfully"))
+}
+
+func (h *handler) handlePush(w http.ResponseWriter, body map[string]interface{}) {
+	// Placeholder for push handling logic
+	h.Logger.Info("Push event received", "body", body)
+	w.Write([]byte("Push event handled successfully"))
 }
 
 func toArgs(body map[string]interface{}, prefix string) []string {
