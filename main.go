@@ -9,6 +9,58 @@ import (
 
 var Logger *slog.Logger
 
+type Event struct {
+	*PushEvent
+	*PackageEvent
+}
+
+type PackageEvent struct {
+	Action  string  `json:"action"`
+	Package Package `json:"package"`
+}
+
+type Package struct {
+	CreatedAt      string         `json:"created_at"`
+	Description    string         `json:"description"`
+	Ecosystem      string         `json:"ecosystem"`
+	HtmlUrl        string         `json:"html_url"`
+	Id             int            `json:"id"`
+	Name           string         `json:"name"`
+	Namespace      string         `json:"namespace"`
+	PackageType    string         `json:"package_type"`
+	PackageVersion PackageVersion `json:"package_version"`
+}
+
+type PackageVersion struct {
+	Name              string            `json:"name"`
+	ContainerMetadata ContainerMetadata `json:"container_metadata"`
+}
+
+type ContainerMetadata struct {
+	Tag Tag `json:"tag"`
+}
+
+type Tag struct {
+	Name string `json:"name"`
+}
+
+type PushEvent struct {
+	After   string   `json:"after"`
+	Before  string   `json:"before"`
+	Commits []Commit `json:"commits"`
+}
+
+type Commit struct {
+	Id        string   `json:"id"`
+	Added     []string `json:"added"`
+	Modified  []string `json:"modified"`
+	Removed   []string `json:"removed"`
+	Message   string   `json:"message"`
+	Timestamp string   `json:"timestamp"`
+	TreeId    string   `json:"tree_id"`
+	Url       string   `json:"url"`
+}
+
 func main() {
 	Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	Logger.Info("Starting infrastructure service on port 8080")
@@ -18,61 +70,83 @@ func main() {
 }
 
 func Handle(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
 	logger := Logger.With("method", r.Method, "path", r.URL.Path, "remote_addr", r.RemoteAddr)
 	if r.URL.Path == "/_health" {
 		w.Write([]byte("OK"))
 		return
 	}
-	defer r.Body.Close()
-	var body map[string]interface{}
+	if r.URL.Path != "/" {
+		logger.Error("Not found")
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if r.Method != http.MethodPost {
+		logger.Error("Method not allowed", "method", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	repo := r.URL.Query().Get("repo")
+	if repo == "" {
+		logger.Error("Missing 'repo' query parameter")
+		http.Error(w, "Missing 'repo' query parameter", http.StatusBadRequest)
+		return
+	}
+	logger = logger.With("repo", repo)
+
+	var e *Event
 	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&body); err != nil {
-		logger.Error("Failed to decode request body", "error", err)
+	if err := decoder.Decode(&e); err != nil {
+		logger.Error("Failed to decode request e", "error", err)
 	}
 
-	if body == nil {
+	if e == nil {
 		logger.Error("Request body is empty")
 		http.Error(w, "Request body is empty", http.StatusBadRequest)
 		return
 	}
 
-	p, ok := body["package"].(map[string]interface{})
-	if !ok {
-		logger.Error("Package field is missing or not an object")
-		http.Error(w, "Package field is missing or not an object", http.StatusBadRequest)
+	if e.PackageEvent != nil {
+		logger.Info("package created",
+			"action", e.Action,
+			"package_name", e.Package.Name,
+			"package_version", e.Package.PackageVersion.Name,
+			"package_id", e.Package.Id,
+			"package_created_at", e.Package.CreatedAt,
+			"package_description", e.Package.Description,
+			"package_ecosystem", e.Package.Ecosystem,
+			"package_html_url", e.Package.HtmlUrl,
+			"package_namespace", e.Package.Namespace,
+			"package_type", e.Package.PackageType,
+			"package_tag", e.Package.PackageVersion.ContainerMetadata.Tag.Name,
+		)
+		w.Write([]byte("Package created successfully"))
+		return
+	} else if e.PushEvent != nil {
+		logger.Info("Push event received",
+			"after", e.After,
+			"before", e.Before,
+			"commits_count", len(e.Commits),
+			"commits", e.Commits,
+		)
+		w.Write([]byte("Push event handled successfully"))
+	} else {
+		logger.Error("Unsupported event")
+		http.Error(w, "Unsupported event", http.StatusBadRequest)
 		return
 	}
-	args := toArgs(p, "")
-	reg, ok := p["registry"].(map[string]interface{})
-	if !ok {
-		logger.Error("Registry field is missing or not an object")
-		http.Error(w, "Registry field is missing or not an object", http.StatusBadRequest)
-		return
-	}
-	args = append(args, toArgs(reg, "registry.")...)
-	v, ok := p["package_version"].(map[string]interface{})
-	if !ok {
-		logger.Error("Package version field is missing or not an object")
-		http.Error(w, "Package version field is missing or not an object", http.StatusBadRequest)
-		return
-	}
-	args = append(args, toArgs(v, "package_version.")...)
-	args = append(args, "tag", v["container_metadata"].(map[string]interface{})["tag"].(map[string]interface{})["name"].(string))
-
-	argsAny := make([]any, len(args))
-	for i, v := range args {
-		argsAny[i] = v
-	}
-	logger.Info("package created", argsAny...)
-	w.Write([]byte("Infrastructure endpoint"))
 }
 
-func toArgs(body map[string]interface{}, prefix string) []string {
-	args := make([]string, 0, len(body)*2)
-	for key, value := range body {
-		if strValue, ok := value.(string); ok {
-			args = append(args, prefix+key, strValue)
-		}
-	}
-	return args
+type handler struct {
+	Logger *slog.Logger
+}
+
+func (h *handler) handlePackage(w http.ResponseWriter, e *PackageEvent) {
+
+}
+
+func (h *handler) handlePush(w http.ResponseWriter, body map[string]interface{}) {
+	// Placeholder for push handling logic
+	h.Logger.Info("Push event received", "body", body)
+	w.Write([]byte("Push event handled successfully"))
 }

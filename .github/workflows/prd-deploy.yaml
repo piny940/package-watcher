@@ -22,6 +22,6 @@ jobs:
           github-actor: ${{ github.actor }}
           tags: |
             ghcr.io/${{ github.repository }}:1.0.${{ github.run_number }}
-            latest
+            ghcr.io/${{ github.repository }}:latest
           path: "."
           cache-registry: ghcr.io/${{ github.repository }}:buildcache
