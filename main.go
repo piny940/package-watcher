@@ -51,7 +51,7 @@ type PushEvent struct {
 }
 
 type Commit struct {
-	Id        int      `json:"id"`
+	Id        string   `json:"id"`
 	Added     []string `json:"added"`
 	Modified  []string `json:"modified"`
 	Removed   []string `json:"removed"`
@@ -94,22 +94,42 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	logger = logger.With("repo", repo)
 
-	var body *Event
+	var e *Event
 	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&body); err != nil {
-		logger.Error("Failed to decode request body", "error", err)
+	if err := decoder.Decode(&e); err != nil {
+		logger.Error("Failed to decode request e", "error", err)
 	}
 
-	if body == nil {
+	if e == nil {
 		logger.Error("Request body is empty")
 		http.Error(w, "Request body is empty", http.StatusBadRequest)
 		return
 	}
 
-	h := &handler{Logger: logger}
-	if body.PackageEvent != nil {
-		h.handlePackage(w, body.PackageEvent)
+	if e.PackageEvent != nil {
+		logger.Info("package created",
+			"action", e.Action,
+			"package_name", e.Package.Name,
+			"package_version", e.Package.PackageVersion.Name,
+			"package_id", e.Package.Id,
+			"package_created_at", e.Package.CreatedAt,
+			"package_description", e.Package.Description,
+			"package_ecosystem", e.Package.Ecosystem,
+			"package_html_url", e.Package.HtmlUrl,
+			"package_namespace", e.Package.Namespace,
+			"package_type", e.Package.PackageType,
+			"package_tag", e.Package.PackageVersion.ContainerMetadata.Tag.Name,
+		)
+		w.Write([]byte("Package created successfully"))
 		return
+	} else if e.PushEvent != nil {
+		logger.Info("Push event received",
+			"after", e.After,
+			"before", e.Before,
+			"commits_count", len(e.Commits),
+			"commits", e.Commits,
+		)
+		w.Write([]byte("Push event handled successfully"))
 	} else {
 		logger.Error("Unsupported event")
 		http.Error(w, "Unsupported event", http.StatusBadRequest)
@@ -122,34 +142,11 @@ type handler struct {
 }
 
 func (h *handler) handlePackage(w http.ResponseWriter, e *PackageEvent) {
-	h.Logger.Info("package created",
-		"action", e.Action,
-		"package_name", e.Package.Name,
-		"package_version", e.Package.PackageVersion.Name,
-		"package_id", e.Package.Id,
-		"package_created_at", e.Package.CreatedAt,
-		"package_description", e.Package.Description,
-		"package_ecosystem", e.Package.Ecosystem,
-		"package_html_url", e.Package.HtmlUrl,
-		"package_namespace", e.Package.Namespace,
-		"package_type", e.Package.PackageType,
-		"package_tag", e.Package.PackageVersion.ContainerMetadata.Tag.Name,
-	)
-	w.Write([]byte("Package created successfully"))
+
 }
 
 func (h *handler) handlePush(w http.ResponseWriter, body map[string]interface{}) {
 	// Placeholder for push handling logic
 	h.Logger.Info("Push event received", "body", body)
 	w.Write([]byte("Push event handled successfully"))
-}
-
-func toArgs(body map[string]interface{}, prefix string) []string {
-	args := make([]string, 0, len(body)*2)
-	for key, value := range body {
-		if strValue, ok := value.(string); ok {
-			args = append(args, prefix+key, strValue)
-		}
-	}
-	return args
 }
