@@ -18,12 +18,30 @@ func main() {
 }
 
 func Handle(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
 	logger := Logger.With("method", r.Method, "path", r.URL.Path, "remote_addr", r.RemoteAddr)
 	if r.URL.Path == "/_health" {
 		w.Write([]byte("OK"))
 		return
 	}
-	defer r.Body.Close()
+	if r.URL.Path != "/" {
+		logger.Error("Not found")
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	if r.Method != http.MethodPost {
+		logger.Error("Method not allowed", "method", r.Method)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	repo := r.URL.Query().Get("repo")
+	if repo == "" {
+		logger.Error("Missing 'repo' query parameter")
+		http.Error(w, "Missing 'repo' query parameter", http.StatusBadRequest)
+		return
+	}
+	logger = logger.With("repo", repo)
+
 	var body map[string]interface{}
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&body); err != nil {
@@ -36,23 +54,39 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h := &handler{Logger: logger}
+	if _, ok := body["package"]; ok {
+		h.handlePackage(w, body)
+		return
+	} else {
+		logger.Error("Unsupported event")
+		http.Error(w, "Unsupported event", http.StatusBadRequest)
+		return
+	}
+}
+
+type handler struct {
+	Logger *slog.Logger
+}
+
+func (h *handler) handlePackage(w http.ResponseWriter, body map[string]interface{}) {
 	p, ok := body["package"].(map[string]interface{})
 	if !ok {
-		logger.Error("Package field is missing or not an object")
+		h.Logger.Error("Package field is missing or not an object")
 		http.Error(w, "Package field is missing or not an object", http.StatusBadRequest)
 		return
 	}
 	args := toArgs(p, "")
 	reg, ok := p["registry"].(map[string]interface{})
 	if !ok {
-		logger.Error("Registry field is missing or not an object")
+		h.Logger.Error("Registry field is missing or not an object")
 		http.Error(w, "Registry field is missing or not an object", http.StatusBadRequest)
 		return
 	}
 	args = append(args, toArgs(reg, "registry.")...)
 	v, ok := p["package_version"].(map[string]interface{})
 	if !ok {
-		logger.Error("Package version field is missing or not an object")
+		h.Logger.Error("Package version field is missing or not an object")
 		http.Error(w, "Package version field is missing or not an object", http.StatusBadRequest)
 		return
 	}
@@ -63,8 +97,8 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	for i, v := range args {
 		argsAny[i] = v
 	}
-	logger.Info("package created", argsAny...)
-	w.Write([]byte("Infrastructure endpoint"))
+	h.Logger.Info("package created", argsAny...)
+	w.Write([]byte("Package created successfully"))
 }
 
 func toArgs(body map[string]interface{}, prefix string) []string {
