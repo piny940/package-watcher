@@ -20,6 +20,8 @@ jobs:
         with:
           gh-token: ${{ secrets.GITHUB_TOKEN }}
           github-actor: ${{ github.actor }}
-          tags: ghcr.io/${{ github.repository }}:1.0.${{ github.run_number }}
+          tags: |
+            ghcr.io/${{ github.repository }}:1.0.${{ github.run_number }}
+            latest
           path: "."
           cache-registry: ghcr.io/${{ github.repository }}:buildcache
