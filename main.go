@@ -18,36 +18,41 @@ func main() {
 }
 
 func Handle(w http.ResponseWriter, r *http.Request) {
+	logger := Logger.With("method", r.Method, "path", r.URL.Path, "remote_addr", r.RemoteAddr)
+	if r.URL.Path == "/_health" {
+		w.Write([]byte("OK"))
+		return
+	}
 	defer r.Body.Close()
 	var body map[string]interface{}
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&body); err != nil {
-		Logger.Error("Failed to decode request body", "error", err)
+		logger.Error("Failed to decode request body", "error", err)
 	}
 
 	if body == nil {
-		Logger.Error("Request body is empty")
+		logger.Error("Request body is empty")
 		http.Error(w, "Request body is empty", http.StatusBadRequest)
 		return
 	}
 
 	p, ok := body["package"].(map[string]interface{})
 	if !ok {
-		Logger.Error("Package field is missing or not an object")
+		logger.Error("Package field is missing or not an object")
 		http.Error(w, "Package field is missing or not an object", http.StatusBadRequest)
 		return
 	}
 	args := toArgs(p, "")
 	reg, ok := p["registry"].(map[string]interface{})
 	if !ok {
-		Logger.Error("Registry field is missing or not an object")
+		logger.Error("Registry field is missing or not an object")
 		http.Error(w, "Registry field is missing or not an object", http.StatusBadRequest)
 		return
 	}
 	args = append(args, toArgs(reg, "registry.")...)
 	v, ok := p["package_version"].(map[string]interface{})
 	if !ok {
-		Logger.Error("Package version field is missing or not an object")
+		logger.Error("Package version field is missing or not an object")
 		http.Error(w, "Package version field is missing or not an object", http.StatusBadRequest)
 		return
 	}
@@ -58,7 +63,7 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 	for i, v := range args {
 		argsAny[i] = v
 	}
-	Logger.Info("package created", argsAny...)
+	logger.Info("package created", argsAny...)
 	w.Write([]byte("Infrastructure endpoint"))
 }
 
